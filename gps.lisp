@@ -2,34 +2,56 @@
 
 
 
-(defun gps (state goals ops &optional (plan '()))
-    (if (subsetp goals state)
-        (append plan (list 'goal-achieved state))
-        (some #'(lambda (op)
-                (when (preconditions-met? (op-preconds op) state)
-                    (trace-step op state)
-                    (let* ((new-state (apply-op op state))
-                            (new-plan (append plan (list (op-action op)))))
-                        (gps new-state goals ops))))
-            ops)))
+(defvar *ops* nil "A list of available operators.")
+(defvar *applied-ops* nil)
 
-;;; check if all preconds are met
-(defun preconditions-met? (preconds state)
-    (format t "checking preconds ~a against state ~a~%" preconds state)
-    (every #'(lambda (p) (member p state)) preconds))
 
-;;; Apply an operator to change state
-(defun apply-op (op state)
-    (format t "applying op ~a to state ~a~%" (op-action op) state)
-    (let ((new-state (set-difference state (op-del-list op))))
-        (append new-state (op-add-list op))))
+(defun gps (state goals &optional (ops *ops*))
+  (let ((plan (remove-if #'atom (achieve-all state goals nil ops))))
+    (write-to-file *applied-ops*)
+    plan))
 
-;;; tracking operator steps
-(defun trace-step (op state)
-    (format t "Applying ~a to ~a~%" (op-action op) state))
+(defun achieve-all (state goals goal-stack ops)
+  (let ((current-state state))
+    (if (and (every #'(lambda (goal)
+                        (setf current-state
+                              (achieve current-state goal goal-stack ops)))
+                    goals)
+             (subsetp goals current-state :test #'equal))
+        current-state
+        nil)))
 
-;;; write plan to a file
+(defun achieve (state goal goal-stack ops)
+  (cond
+    ((member-equal goal state)
+     state)
+    ((member-equal goal goal-stack)
+     nil)
+    (t (some #'(lambda (op)
+                 (when (appropriate-p goal op)
+                   (apply-op state goal op goal-stack ops)))
+             ops))))
+
+(defun member-equal (item list)
+    (cl:member item list :test #'equal))
+      
+
+(defun apply-op (state goal op goal-stack ops)
+  (let ((new-state (achieve-all state (op-preconds op) (cons goal goal-stack) ops)))
+    (if new-state
+        (progn
+          (format t "Applying operator: ~a~%" (op-action op))
+          (push (op-action op) *applied-ops*)
+          (append (remove-if #'(lambda (x)
+                                 (member-equal x (op-del-list op)))
+                             new-state)
+                  (op-add-list op)))
+        nil)))
+
+(defun appropriate-p (goal op)
+  (member-equal goal (op-add-list op)))
+
 (defun write-to-file (plan &optional (filename "plan.txt"))
     (with-open-file (stream filename :direction :output :if-exists :supersede)
-        (dolist (step plan)
+        (dolist (step (reverse plan))
             (format stream "~a~%" step))))
