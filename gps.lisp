@@ -2,26 +2,34 @@
 
 
 
-(defun gps (state goals operators)
+(defun gps (state goals ops &optional (plan '()))
     (if (subsetp goals state)
-        (list 'goal-achieved state)
+        (append plan (list 'goal-achieved state))
         (some #'(lambda (op)
-                (when (preconditions-met? (operator-preconds op) state)
-                    (let ((new-state(apply-operator op state)))
-                        (gps new-state goals operators))))
-            operators)))
+                (when (preconditions-met? (op-preconds op) state)
+                    (trace-step op state)
+                    (let* ((new-state (apply-op op state))
+                            (new-plan (append plan (list (op-action op)))))
+                        (gps new-state goals ops))))
+            ops)))
 
+;;; check if all preconds are met
 (defun preconditions-met? (preconds state)
+    (format t "checking preconds ~a against state ~a~%" preconds state)
     (every #'(lambda (p) (member p state)) preconds))
 
-(defun apply-operator (operator state)
-    (let ((new-state (set-difference state (operator-del-list operator))))
-        (append new-state (operator-add-list operator))))
+;;; Apply an operator to change state
+(defun apply-op (op state)
+    (format t "applying op ~a to state ~a~%" (op-action op) state)
+    (let ((new-state (set-difference state (op-del-list op))))
+        (append new-state (op-add-list op))))
 
-(defun trace-step (operator state)
-    (format t "Applying ~a to ~a~%" (operator-action operator) state))
+;;; tracking operator steps
+(defun trace-step (op state)
+    (format t "Applying ~a to ~a~%" (op-action op) state))
 
-(defun write-to-file (plan filename)
+;;; write plan to a file
+(defun write-to-file (plan &optional (filename "plan.txt"))
     (with-open-file (stream filename :direction :output :if-exists :supersede)
         (dolist (step plan)
             (format stream "~a~%" step))))
